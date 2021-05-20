@@ -1,15 +1,16 @@
 (ns second-week.db.db
-  (:require [datomic.client.api :as d])
+  (:require [datomic.api :as d])
   (:use [clojure pprint]))
 
-(def cfg {:server-type :peer-server
-          :access-key "myaccesskey"
-          :secret "mysecret"
-          :endpoint "localhost:8998"
-          :validate-hostnames false})
 
-(def client (d/client cfg))
+(def db-uri "datomic:dev://localhost:4334/credit-card")
 
 (defn create-database
   []
-  (d/connect client {:db-name "credit-card"}))
+  (let [_ (d/create-database db-uri)
+        conn (d/connect db-uri)]
+    conn))
+
+(defn delete
+  []
+  (d/delete-database db-uri))

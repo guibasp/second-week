@@ -2,26 +2,10 @@
   (:require [second-week.logic.logic :as s.logic]
             [second-week.db.db :as s.db]
             [second-week.db.customers-db :as s.customer-db]
-            [second-week.db.credit-limit-db :as s.credit-db])
+            [second-week.db.credit-limit-db :as s.credit-db]
+            [second-week.db.purchase-db :as s.purchase-db]
+            [second-week.model.model :as s.model])
   (:use [clojure pprint]))
-
-(defn start
-  []
-  (println "Init")
-  (let [customer-to-insert {:customer/cpf "000000000191"
-                            :customer/name "Pedro Santos"
-                            :customer/email "pedro.paulo@gmail.com"}
-        conn (s.db/create-database)
-        customer-tx (s.customer-db/save! customer-to-insert conn)
-        customer-id (first (vals (:tempids customer-tx {})))]
-    (println "Customer id " customer-id)
-    (if (nil? customer-id)
-      (throw (.Exception "Customer id is nil"))
-      (do
-        (println "creating a credit card")
-        ;create a credit with a value of 1000 reais
-        (s.credit-db/save! customer-id 100000 conn)
-        ))))
 
 (defn input
   [label]
@@ -29,22 +13,26 @@
   (flush)
   (read-line))
 
-(defn create-a-new-customer
+(defn create-a-new-customer!
   []
-  (let [customer {:customer/cpf (input "Enter the cpf please :")
-                  :customer/name (input "Enter with a name please :")
-                  :customer/email (input "Enter with a email please :")}
+  (let [
+        cpf (input "Enter the cpf please :")
+        name (input "Enter with a name please :")
+        email (input "Enter with a email please :")
+        customer (s.model/create-customer cpf name email)
         conn (s.db/create-database)
-        customer-tx (s.customer-db/save! customer conn)
+        customer-tx @(s.customer-db/save! customer conn)
         customer-id (first (vals (:tempids customer-tx {})))]
+    (pprint customer-tx)
     (println "Customer id " customer-id)
     (if (nil? customer-id)
       (throw (.Exception "Customer id is nil"))
       (do
         (println "creating a credit card")
         ;create a credit with a value of 1000 reais
-        (s.credit-db/save! customer-id 100000 conn)
-        (assoc customer :db/id customer-id)))))
+        (s.credit-db/save! (:customer/id customer) 100000 conn)
+        (println "Created customer with id " customer-id)
+        (assoc customer :customer/id customer-id)))))
 
 (defn list-all-customers
   []
@@ -61,11 +49,47 @@
     (println customer)
     customer))
 
-(def functions {:1 create-a-new-customer
-                :2 list-all-customers
-                :3 find-customer-by-cpf})
+(defn register-a-new-transaction!
+  []
+  (let [conn (s.db/create-database)
+        cpf (input "What is the cpf number of these transaction? ")
+        value (bigint (input "Transaction's value : "))
+        category (input "Enter with the category name : ")
+        merchant (input "Enter with the merchant name : ")
+        date-of (s.logic/date-now)
+        optional (s.customer-db/find-customer-by-cpf cpf conn)
+        customer (-> optional
+                     ffirst)
+        customer-id (:customer/id customer)
+        ]
+      (if (nil? customer-id)
+        (throw (Exception. (str "Customer with the cpf " cpf " does not exists"))))
+      (let [purchase (s.model/create-purchase
+                       customer-id date-of value merchant category)
+            purchase-tx (s.purchase-db/do-transaction customer-id purchase conn)]
+        (pprint purchase-tx))))
 
-(defn start-two
+(defn customers-limit
+  []
+  (let [conn (s.db/create-database)
+        cpf (input "Enter with a cpf number")
+        optional (s.customer-db/find-customer-by-cpf cpf conn)
+        customer (-> optional
+                     ffirst)
+        customer-id (:customer/id customer)
+        limit (-> (s.credit-db/find-credit-by-customer customer-id conn)
+                  ffirst
+                  :credit/credit-limit)]
+    (println "The customer's limit is " limit))
+  )
+
+(def functions {:1 create-a-new-customer!
+                :2 list-all-customers
+                :3 find-customer-by-cpf
+                :4 register-a-new-transaction!
+                :5 customers-limit})
+
+(defn start
   []
   (do
       (flush)
@@ -73,7 +97,8 @@
       (println "1 - Register customer")
       (println "2 - list all customer")
       (println "3 - find customer by cpf")
-      (println "4 - find customer by cpf")
+      (println "4 - Register a new transaction")
+      (println "5 - Show the customers limit")
       (flush)
       (let [option (read-line)]
         (when (not (= option "0"))
